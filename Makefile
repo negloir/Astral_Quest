@@ -1,105 +1,102 @@
 #---------------------------------------------------------------------------------
-# Astral Quest - NDS (ARM9) build
+# Astral Quest - NDS (ARM9) build (ARM9 only, NitroFS)
+# Based on the official devkitPro libnds template, adjusted to search our local
+# include/ first so Calico stubs are found.  Ends with the standard ds_rules flow.
 #---------------------------------------------------------------------------------
 
 .SUFFIXES:
 
-# Provided by the devkitpro/devkitarm container
 ifeq ($(strip $(DEVKITARM)),)
 $(error "Please set DEVKITARM (provided in the devkitpro/devkitarm container).")
 endif
 
-#---------------------------------------------------------------------------------
-# Project metadata / layout
-#---------------------------------------------------------------------------------
-TARGET      := astral_quest
-BUILD       := build
-
-# Source & headers (case-sensitive)
-SOURCES     := source
-INCLUDES    := include
-
-# NitroFS directory (may be empty; still included in ROM)
-NITRO       := nitrofiles
+include $(DEVKITARM)/ds_rules
 
 #---------------------------------------------------------------------------------
-# Toolchain/lib paths
+# Project config
 #---------------------------------------------------------------------------------
-DEVKITPRO   ?= $(shell dirname $(DEVKITARM))
-LIBDIRS     := $(DEVKITPRO)/libnds $(DEVKITPRO)/portlibs/arm
+TARGET   := astral_quest
+BUILD    := build
+SOURCES  := source
+INCLUDES := include            # our stubs live here
+DATA     :=
+GRAPHICS :=
+AUDIO    :=
+ICON     :=
+NITRO    := nitrofiles         # keep directory in repo (can be empty)
 
 #---------------------------------------------------------------------------------
-# Flags
+# Codegen flags
 #---------------------------------------------------------------------------------
-ARCH     := -marm -mthumb-interwork -march=armv5te -mtune=arm946e-s
-CFLAGS   := -g -Wall -O2 $(ARCH) -DARM9
+ARCH     := -march=armv5te -mtune=arm946e-s
+CFLAGS   := -g -Wall -O2 -ffunction-sections -fdata-sections $(ARCH) $(INCLUDE) -DARM9
 CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS  := -g $(ARCH)
-
-# Use ds_arm9.specs (workflow installs missing sync-none.specs)
-# Write the .map to the repo root via $(OUTPUT).map
-LDFLAGS  := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(OUTPUT).map
-
-# Link order matters
-LIBS     := -lfilesystem -lfat -lnds9
+LDFLAGS  := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 #---------------------------------------------------------------------------------
-# Outer phase: discover sources, set paths, then recurse into $(BUILD)
+# Libraries (NitroFS adds filesystem+fat automatically)
+#---------------------------------------------------------------------------------
+LIBS := -lnds9
+ifneq ($(strip $(NITRO)),)
+  LIBS := -lfilesystem -lfat $(LIBS)
+endif
+ifneq ($(strip $(AUDIO)),)
+  LIBS := -lmm9 $(LIBS)
+endif
+
+#---------------------------------------------------------------------------------
+# Library/search paths (top-level dirs with include/ and lib/)
+#---------------------------------------------------------------------------------
+LIBDIRS := $(LIBNDS) $(PORTLIBS)
+
+#---------------------------------------------------------------------------------
+# Nothing below here normally needs editing (template logic)
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT  := $(CURDIR)/$(TARGET)
-export VPATH   := $(foreach d,$(SOURCES),$(CURDIR)/$(d))
+export VPATH   := $(CURDIR)/$(subst /,,$(dir $(ICON))) \
+                  $(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
+                  $(foreach dir,$(DATA),$(CURDIR)/$(dir)) \
+                  $(foreach dir,$(GRAPHICS),$(CURDIR)/$(dir))
 export DEPSDIR := $(CURDIR)/$(BUILD)
 
-# Discover sources now; ds_rules expects these exported
-CFILES    := $(foreach d,$(SOURCES),$(notdir $(wildcard $(d)/*.c)))
-CPPFILES  := $(foreach d,$(SOURCES),$(notdir $(wildcard $(d)/*.cpp)))
-SFILES    := $(foreach d,$(SOURCES),$(notdir $(wildcard $(d)/*.s)))
+CFILES    := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
+CPPFILES  := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
+SFILES    := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
+PNGFILES  := $(foreach dir,$(GRAPHICS),$(notdir $(wildcard $(dir)/*.png)))
+BINFILES  := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
-# Objects to build (no paths here; VPATH handles finding sources)
-export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
-export OFILES         := $(OFILES_SOURCES)
-
-# NitroFS wiring (ds_rules consumes NITRO_FILES if set)
 ifneq ($(strip $(NITRO)),)
-export NITRO_FILES := $(CURDIR)/$(NITRO)
+  export NITRO_FILES := $(CURDIR)/$(NITRO)
 endif
 
-# Include paths (our local include/ FIRST for calico stubs), then SDK
-export INCLUDE := \
-	-I$(CURDIR)/$(INCLUDES) \
-	-iquote $(CURDIR)/$(INCLUDES) \
-	$(foreach d,$(LIBDIRS),-I$(d)/include) \
-	-I$(CURDIR)/$(BUILD)
+# choose linker (C project by default)
+ifeq ($(strip $(CPPFILES)),)
+  export LD := $(CC)
+else
+  export LD := $(CXX)
+endif
 
-# Library search paths
-export LIBPATHS := $(foreach d,$(LIBDIRS),-L$(d)/lib)
+export OFILES_BIN     := $(addsuffix .o,$(BINFILES))
+export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
+export OFILES         := $(PNGFILES:.png=.o) $(OFILES_BIN) $(OFILES_SOURCES)
+export HFILES         := $(PNGFILES:.png=.h) $(addsuffix .h,$(subst .,_,$(BINFILES)))
 
-# Export tool flags/libs
-export CFLAGS CXXFLAGS ASFLAGS LDFLAGS LIBS
+# IMPORTANT: search our local include/ FIRST so <calico/...> resolves to stubs.
+export INCLUDE := -iquote $(CURDIR)/$(INCLUDES) \
+                  $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
+                  -I$(CURDIR)/$(BUILD)
+export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
 .PHONY: all clean
 all: $(BUILD)
 
 $(BUILD):
-	@mkdir -p $(BUILD)
+	@mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 clean:
-	@echo "[CLEAN] $(BUILD)"
-	@rm -rf $(BUILD) $(TARGET).nds $(TARGET).elf $(TARGET).map
-
-else  # ---------------------------- inside $(BUILD)
-
-# Pull in devkitPro DS rules (compiles objects & builds ROM)
-include $(DEVKITARM)/ds_rules
-
-# Ensure the GCC driver (arm-none-eabi-gcc) performs the link, not bare ld
-override LD := $(CC)
-
-# Default goal builds the ROM
-.PHONY: all
-all: $(OUTPUT).nds
-
-endif
+	@echo clean ...
+	@rm -fr $(BUILD) $(TARGET).elf $(
