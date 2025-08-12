@@ -39,7 +39,7 @@ CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS     := -g $(ARCH)
 
 # Keep classic ds_arm9.specs (container needs sync-none.specs; workflow installs it)
-LDFLAGS     := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+LDFLAGS     := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(notdir $(TARGET).map)
 
 # Link order matters; filesystem -> fat -> nds9
 LIBS        := -lfilesystem -lfat -lnds9
@@ -61,8 +61,6 @@ export DEPSDIR    := $(CURDIR)/$(BUILD)
 CFILES           := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 CPPFILES         := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES           := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-PNGFILES         := $(foreach dir,$(GRAPHICS),$(notdir $(wildcard $(dir)/*.png)))
-BINFILES         := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
 # NitroFS wiring (ds_rules consumes NITRO_FILES)
 ifneq ($(strip $(NITRO)),)
@@ -84,10 +82,8 @@ export INCLUDE := \
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
 # Object lists used by ds_rules
-export OFILES_BIN     := $(addsuffix .o,$(BINFILES))
 export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
-export OFILES         := $(PNGFILES:.png=.o) $(OFILES_BIN) $(OFILES_SOURCES)
-export HFILES         := $(PNGFILES:.png=.h) $(addsuffix .h,$(subst .,_,$(BINFILES)))
+export OFILES         := $(OFILES_SOURCES)
 
 .PHONY: all clean
 all: $(BUILD)
@@ -104,6 +100,9 @@ else  # ---------------------------- inside $(BUILD)
 
 # Pull in devkitPro DS rules (defines CC/CXX/AS/LD with arm-none-eabi- prefix)
 include $(DEVKITARM)/ds_rules
+
+# Force the linker to be the GCC driver (NOT bare ld), so ARCH flags are handled.
+override LD := $(CC)
 
 # Always expose a default goal
 .PHONY: all
