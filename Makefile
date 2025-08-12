@@ -4,7 +4,6 @@
 
 .SUFFIXES:
 
-# devkitARM must be present (provided by devkitpro/devkitarm container)
 ifeq ($(strip $(DEVKITARM)),)
 $(error "Please set DEVKITARM (provided in the devkitpro/devkitarm container).")
 endif
@@ -37,8 +36,6 @@ ARCH        := -march=armv5te -mtune=arm946e-s -marm -mthumb-interwork
 CFLAGS      := -g -Wall -O2 -ffunction-sections -fdata-sections $(ARCH) -DARM9
 CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS     := -g $(ARCH)
-
-# ds_arm9.specs (your workflow installs sync-none.specs beside it)
 LDFLAGS     := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(OUTPUT).map
 
 # Link order matters
@@ -83,13 +80,6 @@ export OFILES_SOURCES  := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
 export OFILES          := $(PNGFILES:.png=.o) $(OFILES_BIN) $(OFILES_SOURCES)
 export HFILES          := $(PNGFILES:.png=.h) $(addsuffix .h,$(subst .,_,$(BINFILES)))
 
-# **FIXED** Include search order (freeze top path so "game.h" is found)
-export INCLUDE := \
-	-I$(TOPDIR)/$(INCLUDES) \
-	-iquote $(TOPDIR)/$(INCLUDES) \
-	$(foreach d,$(LIBDIRS),-I$(d)/include) \
-	-I$(DEPSDIR)
-
 # Library search paths
 export LIBPATHS := $(foreach d,$(LIBDIRS),-L$(d)/lib)
 
@@ -111,6 +101,13 @@ else  # ---------------------------- inside $(BUILD)
 
 # Bring in the devkitPro rules inside the build dir (compilers, patterns, etc.)
 include $(DEVKITARM)/ds_rules
+
+# **CRITICAL FIX**: override include flags AFTER ds_rules so "game.h" is found.
+override INCLUDE := \
+	-I$(TOPDIR)/$(INCLUDES) \
+	-iquote $(TOPDIR)/$(INCLUDES) \
+	$(foreach d,$(LIBDIRS),-I$(d)/include) \
+	-I$(DEPSDIR)
 
 # Ensure the GCC driver (arm-none-eabi-gcc) performs the link (not bare ld)
 override LD := $(CC)
