@@ -46,7 +46,7 @@ LIBS        := -lfilesystem -lfat -lnds9
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
-# Freeze absolute top dir so INCLUDE doesn't re-expand to build/...
+# Freeze absolute top dir so paths don't shift inside build/
 export TOPDIR    := $(CURDIR)
 export OUTPUT    := $(TOPDIR)/$(TARGET)
 export VPATH     := \
@@ -99,15 +99,12 @@ clean:
 
 else  # ---------------------------- inside $(BUILD)
 
-# Bring in the devkitPro rules inside the build dir (compilers, patterns, etc.)
+# Bring in the devkitPro rules inside the build dir
 include $(DEVKITARM)/ds_rules
 
-# **CRITICAL FIX**: override include flags AFTER ds_rules so "game.h" is found.
-override INCLUDE := \
-	-I$(TOPDIR)/$(INCLUDES) \
-	-iquote $(TOPDIR)/$(INCLUDES) \
-	$(foreach d,$(LIBDIRS),-I$(d)/include) \
-	-I$(DEPSDIR)
+# CRITICAL: force repo include/ via CFLAGS/CXXFLAGS (wins over ds_rules INCLUDE)
+override CFLAGS   := $(CFLAGS)   -I$(TOPDIR)/$(INCLUDES) -iquote $(TOPDIR)/$(INCLUDES)
+override CXXFLAGS := $(CXXFLAGS) -I$(TOPDIR)/$(INCLUDES) -iquote $(TOPDIR)/$(INCLUDES)
 
 # Ensure the GCC driver (arm-none-eabi-gcc) performs the link (not bare ld)
 override LD := $(CC)
