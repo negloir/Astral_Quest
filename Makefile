@@ -38,7 +38,7 @@ CFLAGS      := -g -Wall -O2 $(ARCH) -DARM9
 CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS     := -g $(ARCH)
 
-# Let ds_rules create $(TARGET).map via $*.map (canonical)
+# Keep classic ds_arm9.specs; our workflow installs the missing sync-none.specs
 LDFLAGS     := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 # Link order matters; filesystem -> fat -> nds9
@@ -112,8 +112,7 @@ else  # ---------------------------- inside $(BUILD)
 # Pull in devkitPro DS rules
 include $(DEVKITARM)/ds_rules
 
-# Make sure there's always a default goal visible to make
-# (ds_rules defines the recipe for $(OUTPUT).nds)
+# Always expose a default goal for the inner build
 .PHONY: all
 all: $(OUTPUT).nds
 
