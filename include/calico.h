@@ -1,2 +1,3 @@
 #pragma once
-/* Local stub to bypass missing Calico in CI */
+/* Minimal Calico stub so libnds v2 compiles in CI. */
+#include <stdint.h>
