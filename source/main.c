@@ -6,15 +6,18 @@
 GameState g;
 
 static void seed_rng(void) {
-    // Simple seed using time + scanline counter to vary between runs
     uint32_t t = (uint32_t)time(NULL);
     t ^= ((uint32_t)REG_VCOUNT << 16);
     srand(t);
 }
 
 void game_init(void) {
-    // Minimal, reliable setup for text mode on DS
-    consoleDemoInit();   // sets video modes + VRAM + a default console
+    // Minimal, stable setup for text console
+    consoleDemoInit();   // sets video mode + VRAM + a default console
+
+    // Force non-white backdrops so we KNOW we’re drawing
+    BG_PALETTE[0]      = RGB15(0,0,0);   // top: black
+    BG_PALETTE_SUB[0]  = RGB15(0,0,8);   // bottom: dark blue
 
     // Game state
     g.player = (Entity){ .name = "Hero", .hp = 30, .max_hp = 30, .defending = false };
@@ -70,7 +73,7 @@ void game_update(void) {
     u16 kd = keysDown();
 
     if (kd & KEY_SELECT) {
-        // Hang so emulator can exit the ROM cleanly
+        // hang so emulator can exit the ROM cleanly
         while (1) swiWaitForVBlank();
     }
     if (kd & KEY_START) {
