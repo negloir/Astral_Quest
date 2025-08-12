@@ -4,9 +4,9 @@
 
 .SUFFIXES:
 
-# Require devkitARM (provided by devkitpro/devkitarm container)
+# Provided by the devkitpro/devkitarm container
 ifeq ($(strip $(DEVKITARM)),)
-$(error "Please set DEVKITARM in your environment. In CI this is provided by the devkitpro/devkitarm container.")
+$(error "Please set DEVKITARM (provided in the devkitpro/devkitarm container).")
 endif
 
 #---------------------------------------------------------------------------------
@@ -14,14 +14,13 @@ endif
 #---------------------------------------------------------------------------------
 TARGET      := astral_quest
 BUILD       := build
+
+# Source & headers (case-sensitive)
 SOURCES     := source
 INCLUDES    := include
-DATA        :=
-GRAPHICS    :=
-AUDIO       :=
 
-# NitroFS directory (can be empty; ds_rules packs it into the ROM)
-NITRO       := nitrofiles
+# NitroFS directory (may be empty; still included in ROM)
+NITRO_FILES := nitrofiles
 
 #---------------------------------------------------------------------------------
 # Toolchain/lib paths
@@ -30,60 +29,40 @@ DEVKITPRO   ?= $(shell dirname $(DEVKITARM))
 LIBDIRS     := $(DEVKITPRO)/libnds $(DEVKITPRO)/portlibs/arm
 
 #---------------------------------------------------------------------------------
-# Codegen flags
+# Flags
 #---------------------------------------------------------------------------------
-ARCH        := -marm -mthumb-interwork -march=armv5te -mtune=arm946e-s
+ARCH     := -marm -mthumb-interwork -march=armv5te -mtune=arm946e-s
+CFLAGS   := -g -Wall -O2 $(ARCH) -DARM9
+CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
+ASFLAGS  := -g $(ARCH)
+# Use ds_arm9.specs (our workflow installs the missing sync-none.specs)
+LDFLAGS  := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(notdir $(TARGET).map)
 
-CFLAGS      := -g -Wall -O2 $(ARCH) -DARM9
-CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions
-ASFLAGS     := -g $(ARCH)
+# Link order matters for libfat/libnds
+LIBS     := -lfilesystem -lfat -lnds9
 
-# Keep classic ds_arm9.specs (container needs sync-none.specs; workflow installs it)
-LDFLAGS     := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(notdir $(TARGET).map)
+# Put our local include directory FIRST so <calico/...> resolves to stubs
+INCLUDE  := \
+	-I$(CURDIR)/$(INCLUDES) \
+	-iquote $(CURDIR)/$(INCLUDES) \
+	$(foreach d,$(LIBDIRS),-I$(d)/include)
 
-# Link order matters; filesystem -> fat -> nds9
-LIBS        := -lfilesystem -lfat -lnds9
+# Library search paths
+LIBPATHS := $(foreach d,$(LIBDIRS),-L$(d)/lib)
 
 #---------------------------------------------------------------------------------
-# Recursive build into $(BUILD)
+# Build orchestration (let ds_rules do discovery & dependency wiring)
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT     := $(CURDIR)/$(TARGET)
-export VPATH      := \
-	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-	$(foreach dir,$(DATA),$(CURDIR)/$(dir)) \
-	$(foreach dir,$(GRAPHICS),$(CURDIR)/$(dir))
-
+export TOPDIR     := $(CURDIR)
+export VPATH      := $(foreach d,$(SOURCES),$(CURDIR)/$(d))
 export DEPSDIR    := $(CURDIR)/$(BUILD)
 
-# Discover sources & assets
-CFILES           := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
-CPPFILES         := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
-SFILES           := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-
-# NitroFS wiring (ds_rules consumes NITRO_FILES)
-ifneq ($(strip $(NITRO)),)
-export NITRO_FILES := $(CURDIR)/$(NITRO)
-endif
-
-# Include paths:
-# 1) our local "include/" first for <calico/...> stubs
-# 2) -iquote for "" includes
-# 3) system/portlibs includes
-# 4) build dir for generated headers
-export INCLUDE := \
-	-I$(CURDIR)/$(INCLUDES) \
-	-iquote $(CURDIR)/$(INCLUDES) \
-	$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
-	-I$(CURDIR)/$(BUILD)
-
-# Library search paths
-export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
-
-# Object lists used by ds_rules
-export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
-export OFILES         := $(OFILES_SOURCES)
+# Re-export variables used by ds_rules
+export SOURCES INCLUDES NITRO_FILES
+export INCLUDE LIBPATHS LIBS CFLAGS CXXFLAGS ASFLAGS LDFLAGS
 
 .PHONY: all clean
 all: $(BUILD)
@@ -98,13 +77,13 @@ clean:
 
 else  # ---------------------------- inside $(BUILD)
 
-# Pull in devkitPro DS rules (defines CC/CXX/AS/LD with arm-none-eabi- prefix)
+# Pull in devkitPro DS rules (handles object discovery & ROM creation)
 include $(DEVKITARM)/ds_rules
 
-# Force the linker to be the GCC driver (NOT bare ld), so ARCH flags are handled.
+# Ensure the GCC driver (arm-none-eabi-gcc) performs the link, not bare ld
 override LD := $(CC)
 
-# Always expose a default goal
+# Default goal builds the ROM; ds_rules wires object prerequisites correctly.
 .PHONY: all
 all: $(OUTPUT).nds
 
