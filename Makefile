@@ -4,7 +4,7 @@
 
 .SUFFIXES:
 
-# Require a devkitARM toolchain (provided in the devkitpro/devkitarm container)
+# Require devkitARM (provided by devkitpro/devkitarm container)
 ifeq ($(strip $(DEVKITARM)),)
 $(error "Please set DEVKITARM in your environment. In CI this is provided by the devkitpro/devkitarm container.")
 endif
@@ -20,7 +20,7 @@ DATA        :=
 GRAPHICS    :=
 AUDIO       :=
 
-# NitroFS directory (can be empty; ds_rules will pack it into the ROM)
+# NitroFS directory (can be empty; ds_rules packs it into the ROM)
 NITRO       := nitrofiles
 
 #---------------------------------------------------------------------------------
@@ -38,7 +38,7 @@ CFLAGS      := -g -Wall -O2 $(ARCH) -DARM9
 CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS     := -g $(ARCH)
 
-# Keep classic ds_arm9.specs; our workflow installs the missing sync-none.specs
+# Keep classic ds_arm9.specs (container needs sync-none.specs; workflow installs it)
 LDFLAGS     := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 # Link order matters; filesystem -> fat -> nds9
@@ -69,18 +69,18 @@ ifneq ($(strip $(NITRO)),)
 export NITRO_FILES := $(CURDIR)/$(NITRO)
 endif
 
-# Compose include paths:
-# 1) force our local "include/" first for <calico/...> stubs
-# 2) also search it with -iquote for "" includes
-# 3) then system/ports includes
-# 4) finally build dir for generated headers
+# Include paths:
+# 1) our local "include/" first for <calico/...> stubs
+# 2) -iquote for "" includes
+# 3) system/portlibs includes
+# 4) build dir for generated headers
 export INCLUDE := \
 	-I$(CURDIR)/$(INCLUDES) \
 	-iquote $(CURDIR)/$(INCLUDES) \
 	$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
 	-I$(CURDIR)/$(BUILD)
 
-# Library search paths for the linker
+# Library search paths
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
 # Object lists used by ds_rules
@@ -88,13 +88,6 @@ export OFILES_BIN     := $(addsuffix .o,$(BINFILES))
 export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
 export OFILES         := $(PNGFILES:.png=.o) $(OFILES_BIN) $(OFILES_SOURCES)
 export HFILES         := $(PNGFILES:.png=.h) $(addsuffix .h,$(subst .,_,$(BINFILES)))
-
-# choose linker
-ifeq ($(strip $(CPPFILES)),)
-export LD := $(CC)
-else
-export LD := $(CXX)
-endif
 
 .PHONY: all clean
 all: $(BUILD)
@@ -109,10 +102,10 @@ clean:
 
 else  # ---------------------------- inside $(BUILD)
 
-# Pull in devkitPro DS rules
+# Pull in devkitPro DS rules (defines CC/CXX/AS/LD with arm-none-eabi- prefix)
 include $(DEVKITARM)/ds_rules
 
-# Always expose a default goal for the inner build
+# Always expose a default goal
 .PHONY: all
 all: $(OUTPUT).nds
 
