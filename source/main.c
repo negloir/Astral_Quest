@@ -5,35 +5,16 @@
 // Global state
 GameState g;
 
-// Two consoles: top (main engine) and bottom (sub engine)
-static PrintConsole topConsole;
-static PrintConsole bottomConsole;
-
 static void seed_rng(void) {
+    // Simple seed using time + scanline counter to vary between runs
     uint32_t t = (uint32_t)time(NULL);
-    t ^= (uint32_t)REG_VCOUNT << 16;
+    t ^= ((uint32_t)REG_VCOUNT << 16);
     srand(t);
 }
 
 void game_init(void) {
-    // --- Hard init of video/VRAM/IRQ so we never get a white screen ---
-    irqInit();
-    irqEnable(IRQ_VBLANK);
-
-    powerOn(POWER_ALL_2D);
-
-    // Map VRAM banks: BGs on A/C, sprites on B/D
-    vramSetMainBanks(VRAM_A_MAIN_BG, VRAM_B_MAIN_SPRITE, VRAM_C_SUB_BG, VRAM_D_SUB_SPRITE);
-
-    // 2D text background active on both engines
-    videoSetMode(MODE_0_2D | DISPLAY_BG0_ACTIVE);
-    videoSetModeSub(MODE_0_2D | DISPLAY_BG0_ACTIVE);
-
-    // Initialize a text console on BOTH screens (BG0), then draw to top by default
-    consoleInit(&topConsole,    0, BgType_Text4bpp, BgSize_T_256x256, 31, 0, true,  true);
-    consoleInit(&bottomConsole, 0, BgType_Text4bpp, BgSize_T_256x256, 31, 0, false, true);
-    consoleSelect(&topConsole);
-    // ------------------------------------------------------------------
+    // Minimal, reliable setup for text mode on DS
+    consoleDemoInit();   // sets video modes + VRAM + a default console
 
     // Game state
     g.player = (Entity){ .name = "Hero", .hp = 30, .max_hp = 30, .defending = false };
@@ -43,20 +24,11 @@ void game_init(void) {
 
     seed_rng();
 
-    // Title on both screens so you can confirm both are rendering
     clear_screen();
-    iprintf("Astral Quest (TOP)\n");
+    iprintf("Astral Quest\n");
     iprintf("-----------------------------\n");
     iprintf("A: Attack  B: Defend  X: Heal\n");
     iprintf("START: Reset   SELECT: Quit\n\n");
-
-    consoleSelect(&bottomConsole);
-    clear_screen();
-    iprintf("Astral Quest (BOTTOM)\n");
-    iprintf("-----------------------------\n");
-
-    // Keep drawing on the top by default
-    consoleSelect(&topConsole);
 }
 
 static void player_turn(u16 keys) {
@@ -139,9 +111,8 @@ static void draw_bar(const char* who, int hp, int maxhp) {
 }
 
 void game_draw(void) {
-    consoleSelect(&topConsole);
     clear_screen();
-    iprintf("Astral Quest (TOP)\n");
+    iprintf("Astral Quest\n");
     iprintf("-----------------------------\n");
     draw_bar("You",   g.player.hp, g.player.max_hp);
     draw_bar("Wisp",  g.enemy .hp, g.enemy .max_hp);
