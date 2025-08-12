@@ -102,9 +102,15 @@ else  # ---------------------------- inside $(BUILD)
 # Bring in the devkitPro rules inside the build dir
 include $(DEVKITARM)/ds_rules
 
-# CRITICAL: force repo include/ via CFLAGS/CXXFLAGS (wins over ds_rules INCLUDE)
-override CFLAGS   := $(CFLAGS)   -I$(TOPDIR)/$(INCLUDES) -iquote $(TOPDIR)/$(INCLUDES)
-override CXXFLAGS := $(CXXFLAGS) -I$(TOPDIR)/$(INCLUDES) -iquote $(TOPDIR)/$(INCLUDES)
+# FORCE both include roots onto every compile line (beats ds_rules defaults)
+INCLUDE_EXTRA := \
+	-I$(TOPDIR)/$(INCLUDES) \
+	-iquote $(TOPDIR)/$(INCLUDES) \
+	$(foreach d,$(LIBDIRS),-I$(d)/include) \
+	-I$(DEPSDIR)
+
+override CFLAGS   := $(CFLAGS)   $(INCLUDE_EXTRA)
+override CXXFLAGS := $(CXXFLAGS) $(INCLUDE_EXTRA)
 
 # Ensure the GCC driver (arm-none-eabi-gcc) performs the link (not bare ld)
 override LD := $(CC)
