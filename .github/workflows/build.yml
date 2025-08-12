@@ -12,6 +12,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # (Optional) quick debug so you can see headers in CI
+      - name: Show headers and flags (debug)
+        run: |
+          echo "---- include tree ----"
+          find include -maxdepth 3 -type f | sort || true
+          echo "---- peek types.h ----"
+          sed -n '1,20p' include/calico/types.h || true
+
       - name: Build
         run: make
 
