@@ -15,7 +15,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Make the toolchain visible to subsequent steps
       - name: Prepare toolchain env
         shell: bash
         run: |
@@ -24,8 +23,7 @@ jobs:
           echo "DEVKITARM=/opt/devkitpro/devkitARM" >> "$GITHUB_ENV"
           echo "/opt/devkitpro/devkitARM/bin" >> "$GITHUB_PATH"
 
-      # ds_arm9.specs includes 'sync-none.specs' which is missing in this container.
-      # Install the shim right next to ds_arm9.specs so the include resolves.
+      # ds_arm9.specs includes 'sync-none.specs' in this image; drop a tiny shim beside it.
       - name: Install sync-none.specs beside ds_arm9.specs
         shell: bash
         run: |
@@ -38,15 +36,16 @@ jobs:
             '*link:' \
             '--defsym=__sync_synchronize=__sync_synchronize_none %(sync_sync_link)' \
             > "$DS_DIR/sync-none.specs"
-          echo "Installed: $DS_DIR/sync-none.specs"
+          ls -l "$DS_DIR/sync-none.specs"
 
       - name: Build
         shell: bash
         run: |
           set -euo pipefail
+          # Sanity: show we actually see the C sources, then build.
+          ls -l source || true
           make -j2
           ls -l astral_quest.* || true
-          ls -l build || true
 
       - name: Upload ROM + debug
         uses: actions/upload-artifact@v4
@@ -56,5 +55,4 @@ jobs:
             astral_quest.nds
             astral_quest.elf
             astral_quest.map
-            build/astral_quest.map
           if-no-files-found: error
