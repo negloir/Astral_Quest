@@ -1,3 +1,2 @@
 #pragma once
-/* Minimal Calico stub so libnds v2 compiles in CI. */
-#include <stdint.h>
+/* Stub for Calico: not used by this project, just needed to satisfy includes. */
