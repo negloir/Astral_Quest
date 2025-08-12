@@ -31,7 +31,7 @@ LDFLAGS   := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 LIBS      := -lnds9 -lfilesystem -lfat
 LIBDIRS   := $(LIBNDS)
 
-# Make sure our local "include/" is searched for angle includes like <calico/...>
+# Ensure our local include/ is searched for <calico/...>
 export INCLUDE := \
   $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir) -iquote $(CURDIR)/$(dir)) \
   $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
@@ -60,7 +60,8 @@ export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
 export OFILES          := $(OFILES_SOURCES)
 export LIBPATHS        := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-.PHONY: $(BUILD) clean
+.PHONY: all $(BUILD) clean
+all: $(BUILD)
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
@@ -76,10 +77,22 @@ $(OUTPUT).nds: $(OUTPUT).elf $(NITRO_FILES)
 	@ndstool -c $@ -9 $(TARGET).elf -d $(NITRO_FILES)
 	@echo built ... $(notdir $@)
 
+$(NITRO_FILES): ; @:
+
 $(OUTPUT).elf: $(OFILES)
 	@echo linking $(notdir $@)
 	@$(LD) $(LDFLAGS) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
 
 %.o: %.c
 	@echo $(notdir $<)
-	@$(CC) -MMD -MF $(DEPSDIR)/$*.d $(CFLAGS) -c $< -o $
+	@$(CC) -MMD -MF $(DEPSDIR)/$*.d $(CFLAGS) -c $< -o $@
+
+%.o: %.cpp
+	@echo $(notdir $<)
+	@$(CXX) -MMD -MF $(DEPSDIR)/$*.d $(CXXFLAGS) -c $< -o $@
+
+%.o: %.s
+	@echo $(notdir $<)
+	@$(CC) -MMD -MF $(DEPSDIR)/$*.d $(ASFLAGS) -c $< -o $@
+
+endif
