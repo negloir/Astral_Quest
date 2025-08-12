@@ -1,33 +1,54 @@
 name: Build Astral Quest
+
 on:
-  push:
-    branches: [ "main" ]
   workflow_dispatch:
+  push:
+    branches: [ main, master ]
+  pull_request:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkitarm:latest
-    steps:
-      - uses: actions/checkout@v4
 
-      # (Optional) quick debug so you can see headers in CI
-      - name: Show headers and flags (debug)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- Workaround: missing sync-none.specs in container ---
+      - name: Install sync-none.specs shim (GCC ARM)
         run: |
-          echo "---- include tree ----"
-          find include -maxdepth 3 -type f | sort || true
-          echo "---- peek types.h ----"
-          sed -n '1,20p' include/calico/types.h || true
+          set -eu
+          SPEC_CONTENT='%rename link sync_sync_link
+          
+*link:
+--defsym=__sync_synchronize=__sync_synchronize_none %(sync_sync_link)
+'
+          # Write to arm-none-eabi lib dir (commonly used by specs search)
+          install -d /opt/devkitpro/devkitARM/arm-none-eabi/lib
+          printf "%s\n" "$SPEC_CONTENT" > /opt/devkitpro/devkitARM/arm-none-eabi/lib/sync-none.specs
+
+          # Also drop into versioned GCC lib dir if present (belt & braces)
+          if ls /opt/devkitpro/devkitARM/lib/gcc/arm-none-eabi/* >/dev/null 2>&1; then
+            for d in /opt/devkitpro/devkitARM/lib/gcc/arm-none-eabi/*; do
+              printf "%s\n" "$SPEC_CONTENT" > "$d/sync-none.specs"
+            done
+          fi
+      # --------------------------------------------------------
+
+      - name: (Optional) sanity: list calico stubs
+        run: |
+          ls -R include || true
 
       - name: Build
         run: make
 
-      - name: Upload Artifact
+      - name: Upload ROM + debug
         uses: actions/upload-artifact@v4
         with:
           name: astral_quest_build
           path: |
             astral_quest.nds
-            *.map
-            *.elf
+            astral_quest.elf
+            astral_quest.map
