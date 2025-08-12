@@ -15,25 +15,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Workaround: ds_arm9.specs includes sync-none.specs which is missing in the container.
-      - name: Install sync-none.specs shim
+      # ds_arm9.specs includes 'sync-none.specs'. Put the shim in the SAME DIR as ds_arm9.specs.
+      - name: Install sync-none.specs next to ds_arm9.specs
         shell: bash
         run: |
           set -euo pipefail
+          DS_SPECS="$(arm-none-eabi-gcc -print-file-name=ds_arm9.specs)"
+          DS_DIR="$(dirname "$DS_SPECS")"
+          echo "ds_arm9.specs found at: $DS_SPECS"
+          echo "Installing sync-none.specs to: $DS_DIR"
 
-          install -d /opt/devkitpro/devkitARM/arm-none-eabi/lib
+          install -d "$DS_DIR"
+          cat > "$DS_DIR/sync-none.specs" <<'EOF'
+%rename link sync_sync_link
+*link:
+--defsym=__sync_synchronize=__sync_synchronize_none %(sync_sync_link)
+EOF
 
-          cat > /opt/devkitpro/devkitARM/arm-none-eabi/lib/sync-none.specs <<'EOF'
-          %rename link sync_sync_link
-          *link:
-          --defsym=__sync_synchronize=__sync_synchronize_none %(sync_sync_link)
-          EOF
-
-          if ls /opt/devkitpro/devkitARM/lib/gcc/arm-none-eabi/* >/dev/null 2>&1; then
-            for d in /opt/devkitpro/devkitARM/lib/gcc/arm-none-eabi/*; do
-              cp /opt/devkitpro/devkitARM/arm-none-eabi/lib/sync-none.specs "$d/sync-none.specs"
-            done
-          fi
+          echo "Installed:"
+          ls -l "$DS_DIR/sync-none.specs"
 
       - name: Build
         run: make
