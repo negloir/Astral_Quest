@@ -6,17 +6,14 @@
 GameState g;
 
 static void seed_rng(void) {
-    // Mix timer & scanline counter for different seeds in emulators/CI
     uint32_t t = (uint32_t)time(NULL);
     t ^= (uint32_t)REG_VCOUNT << 16;
     srand(t);
 }
 
 void game_init(void) {
-    // Simple console on main screen (text mode)
-    consoleDemoInit(); // sets video modes + VRAM and a console for us
+    consoleDemoInit(); // sets video modes + VRAM and a console
 
-    // Initialize state
     g.player = (Entity){ .name = "Hero", .hp = 30, .max_hp = 30, .defending = false };
     g.enemy  = (Entity){ .name = "Wisp", .hp = 20, .max_hp = 20, .defending = false };
     g.gameOver = false;
@@ -56,15 +53,7 @@ static void enemy_turn(void) {
         int dmg = rand_range(2, 6);
         if (g.player.defending) dmg = (dmg+1)/2;
         g.player.hp -= dmg;
-        char buf[48];
-        snprintf(buf, sizeof(buf), "Wisp hits you for %d.", dmg);
-        // Append to lastMsg if empty, else replace
-        if (g.lastMsg[0] == '\0') {
-            snprintf(g.lastMsg, sizeof(g.lastMsg), "%s", buf);
-        } else {
-            // Keep only enemy line to avoid scrolling too much
-            snprintf(g.lastMsg, sizeof(g.lastMsg), "%s", buf);
-        }
+        snprintf(g.lastMsg, sizeof(g.lastMsg), "Wisp hits you for %d.", dmg);
         g.player.defending = false;
     } else { // 30% defend
         g.enemy.defending = true;
@@ -77,8 +66,6 @@ void game_update(void) {
     u16 kd = keysDown();
 
     if (kd & KEY_SELECT) {
-        // Quit back to white (emulators usually just stop the ROM)
-        // On hardware you'd keep running; here we just hang.
         while (1) swiWaitForVBlank();
     }
     if (kd & KEY_START) {
@@ -106,7 +93,6 @@ void game_update(void) {
 }
 
 static void draw_bar(const char* who, int hp, int maxhp) {
-    // Simple ASCII HP bar (length 16)
     int filled = (hp * 16 + maxhp/2) / maxhp;
     if (filled < 0) filled = 0;
     if (filled > 16) filled = 16;
