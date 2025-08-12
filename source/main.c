@@ -1,131 +1,140 @@
-#define ARM9 1
-#define __NDS__ 1
 #include "game.h"
-#include <fat.h>
-#include <string.h>
-#include <filesystem.h>
+#include <stdlib.h>
+#include <time.h>
 
-static Player gPlayer;
-static Enemy  gEnemy;
-static int    gTurn = 0; // 0=player,1=enemy
-static bool   gRunning = true;
+// Global state
+GameState g;
 
-static void init_console() {
-    videoSetMode(MODE_0_2D);
-    videoSetModeSub(MODE_0_2D);
-    consoleDemoInit();
-}
-
-static Stats make_stats(u16 lvl, u32* seed) {
-    Stats s;
-    s.level = lvl;
-    s.hp = 40 + lvl*10 + (randint(seed,0,8));
-    s.mp = 20 + lvl*4  + (randint(seed,0,5));
-    s.atk = 8  + lvl*2 + (randint(seed,0,3));
-    s.def = 6  + lvl*2 + (randint(seed,0,3));
-    s.spd = 8  + lvl*2 + (randint(seed,0,3));
-    s.exp = 0;
-    return s;
-}
-
-static void spawn_enemy(u32* seed) {
-    snprintf(gEnemy.name, sizeof(gEnemy.name), "Wisp");
-    gEnemy.stats = make_stats(gPlayer.stats.level, seed);
-    gEnemy.isBoss = false;
+static void seed_rng(void) {
+    // Mix timer & scanline counter for different seeds in emulators/CI
+    uint32_t t = (uint32_t)time(NULL);
+    t ^= (uint32_t)REG_VCOUNT << 16;
+    srand(t);
 }
 
 void game_init(void) {
-    init_console();
-    iprintf("\x1b[1;1H%s v%s\n", GAME_TITLE, VERSION_STR);
-    bool nitroOk = nitroFSInit(NULL);
-    bool fatOk = fatInitDefault();
-    iprintf("Data: NitroFS=%s, FAT=%s\n", nitroOk ? "OK":"--", fatOk ? "OK":"--");
-    if(!load_profile(&gPlayer)) {
-        strncpy(gPlayer.name, "Hero", sizeof(gPlayer.name));
-        gPlayer.rng_seed = 0xA5A5A5A5;
-        gPlayer.stats = make_stats(1, &gPlayer.rng_seed);
-        save_profile(&gPlayer);
-    }
-    spawn_enemy(&gPlayer.rng_seed);
-    draw_hud(&gPlayer, &gEnemy, gTurn);
+    // Simple console on main screen (text mode)
+    consoleDemoInit(); // sets video modes + VRAM and a console for us
+
+    // Initialize state
+    g.player = (Entity){ .name = "Hero", .hp = 30, .max_hp = 30, .defending = false };
+    g.enemy  = (Entity){ .name = "Wisp", .hp = 20, .max_hp = 20, .defending = false };
+    g.gameOver = false;
+    g.lastMsg[0] = '\0';
+
+    seed_rng();
+    clear_screen();
+    iprintf("Astral Quest\n");
+    iprintf("-----------------------------\n");
+    iprintf("A: Attack  B: Defend  X: Heal\n");
+    iprintf("START: Reset   SELECT: Quit\n\n");
 }
 
-static void player_turn() {
-    draw_text_center(12, "[A] Attack  [B] Guard  [X] Skill");
-    scanKeys();
-    int down = keysDownRepeat();
-    if(down & KEY_A){
-        int dmg = (gPlayer.stats.atk + randint(&gPlayer.rng_seed,0,4)) - (gEnemy.stats.def/2);
-        if(dmg < 1) dmg = 1;
-        if(dmg > gEnemy.stats.hp) dmg = gEnemy.stats.hp;
-        gEnemy.stats.hp -= dmg;
-        iprintf("\x1b[16;1HYou strike! %d dmg.      ", dmg);
-        gTurn = 1;
-    } else if(down & KEY_B){
-        iprintf("\x1b[16;1HYou brace for impact.      ");
-        gPlayer.stats.def += 2;
-        gTurn = 1;
-    } else if(down & KEY_X){
-        if(gPlayer.stats.mp >= 5){
-            gPlayer.stats.mp -= 5;
-            int dmg = (gPlayer.stats.atk*3/2 + randint(&gPlayer.rng_seed,3,8)) - (gEnemy.stats.def/3);
-            if(dmg < 2) dmg = 2;
-            if(dmg > gEnemy.stats.hp) dmg = gEnemy.stats.hp;
-            gEnemy.stats.hp -= dmg;
-            iprintf("\x1b[16;1HArcane Bolt! %d dmg.      ", dmg);
-            gTurn = 1;
+static void player_turn(u16 keys) {
+    if (keys & KEY_A) {
+        int dmg = rand_range(3, 8);
+        if (g.enemy.defending) dmg = (dmg+1)/2;
+        g.enemy.hp -= dmg;
+        snprintf(g.lastMsg, sizeof(g.lastMsg), "You attack for %d!", dmg);
+        g.enemy.defending = false;
+    } else if (keys & KEY_B) {
+        g.player.defending = true;
+        snprintf(g.lastMsg, sizeof(g.lastMsg), "You brace for impact.");
+    } else if (keys & KEY_X) {
+        int heal = rand_range(3, 6);
+        g.player.hp = clampi(g.player.hp + heal, 0, g.player.max_hp);
+        snprintf(g.lastMsg, sizeof(g.lastMsg), "You heal %d HP.", heal);
+        g.player.defending = false;
+    }
+}
+
+static void enemy_turn(void) {
+    if (g.enemy.hp <= 0) return;
+
+    int choice = rand_range(0, 9); // 0..9
+    if (choice < 7) { // 70% attack
+        int dmg = rand_range(2, 6);
+        if (g.player.defending) dmg = (dmg+1)/2;
+        g.player.hp -= dmg;
+        char buf[48];
+        snprintf(buf, sizeof(buf), "Wisp hits you for %d.", dmg);
+        // Append to lastMsg if empty, else replace
+        if (g.lastMsg[0] == '\0') {
+            snprintf(g.lastMsg, sizeof(g.lastMsg), "%s", buf);
         } else {
-            iprintf("\x1b[16;1HNot enough MP!            ");
+            // Keep only enemy line to avoid scrolling too much
+            snprintf(g.lastMsg, sizeof(g.lastMsg), "%s", buf);
+        }
+        g.player.defending = false;
+    } else { // 30% defend
+        g.enemy.defending = true;
+        snprintf(g.lastMsg, sizeof(g.lastMsg), "Wisp is guarding.");
+    }
+}
+
+void game_update(void) {
+    scanKeys();
+    u16 kd = keysDown();
+
+    if (kd & KEY_SELECT) {
+        // Quit back to white (emulators usually just stop the ROM)
+        // On hardware you'd keep running; here we just hang.
+        while (1) swiWaitForVBlank();
+    }
+    if (kd & KEY_START) {
+        game_init(); // reset
+        return;
+    }
+
+    if (!g.gameOver) {
+        if (kd & (KEY_A | KEY_B | KEY_X)) {
+            player_turn(kd);
+            if (g.enemy.hp <= 0) {
+                g.enemy.hp = 0;
+                g.gameOver = true;
+                snprintf(g.lastMsg, sizeof(g.lastMsg), "You win! START=Reset");
+            } else {
+                enemy_turn();
+                if (g.player.hp <= 0) {
+                    g.player.hp = 0;
+                    g.gameOver = true;
+                    snprintf(g.lastMsg, sizeof(g.lastMsg), "You fell... START=Reset");
+                }
+            }
         }
     }
 }
 
-static void enemy_turn() {
-    swiDelay(50000);
-    int choice = randint(&gPlayer.rng_seed, 0, 10);
-    if(choice < 7){
-        int dmg = (gEnemy.stats.atk + randint(&gPlayer.rng_seed,0,3)) - (gPlayer.stats.def/2);
-        if(dmg < 1) dmg = 1;
-        if(dmg > gPlayer.stats.hp) dmg = gPlayer.stats.hp;
-        gPlayer.stats.hp -= dmg;
-        iprintf("\x1b[16;1HThe Wisp zaps! %d dmg.     ", dmg);
-    } else {
-        gEnemy.stats.def += 2;
-        iprintf("\x1b[16;1HThe Wisp flickers, guarding.");
-    }
-    gTurn = 0;
+static void draw_bar(const char* who, int hp, int maxhp) {
+    // Simple ASCII HP bar (length 16)
+    int filled = (hp * 16 + maxhp/2) / maxhp;
+    if (filled < 0) filled = 0;
+    if (filled > 16) filled = 16;
+
+    char bar[17];
+    for (int i=0;i<16;i++) bar[i] = (i < filled) ? '#' : '.';
+    bar[16] = '\0';
+
+    iprintf("%-5s [%s] %2d/%2d\n", who, bar, hp, maxhp);
 }
 
-void game_loop(void) {
-    while(gRunning){
-        draw_hud(&gPlayer, &gEnemy, gTurn);
-        if(gEnemy.stats.hp == 0){
-            iprintf("\x1b[18;1HEnemy defeated! +10 EXP");
-            gPlayer.stats.exp += 10;
-            if(gPlayer.stats.exp >= 20){
-                gPlayer.stats.exp = 0;
-                gPlayer.stats.level++;
-                gPlayer.stats.hp += 6; gPlayer.stats.mp += 4;
-                gPlayer.stats.atk += 2; gPlayer.stats.def += 2; gPlayer.stats.spd += 1;
-                iprintf("\x1b[19;1HLevel up! Now %d         ", gPlayer.stats.level);
-            }
-            spawn_enemy(&gPlayer.rng_seed);
-            swiDelay(100000);
-        }
-        if(gPlayer.stats.hp == 0){
-            iprintf("\x1b[18;1HYou fall... Press START to retry");
-            scanKeys();
-            if(keysDown() & KEY_START){
-                gPlayer.stats = (Stats){.hp=40,.mp=20,.atk=8,.def=6,.spd=8,.level=1,.exp=0};
-            }
-        }
-        scanKeys();
-        int down = keysDown();
-        if(down & KEY_START){ save_profile(&gPlayer); iprintf("\x1b[22;1HSaved.\n"); }
-        if(down & KEY_SELECT){ gRunning = false; }
-        if(gTurn == 0) player_turn(); else enemy_turn();
+void game_draw(void) {
+    clear_screen();
+    iprintf("Astral Quest\n");
+    iprintf("-----------------------------\n");
+    draw_bar("You",   g.player.hp, g.player.max_hp);
+    draw_bar("Wisp",  g.enemy .hp, g.enemy .max_hp);
+    iprintf("\nA: Attack  B: Defend  X: Heal\n");
+    iprintf("START: Reset   SELECT: Quit\n\n");
+    if (g.lastMsg[0]) iprintf("%s\n", g.lastMsg);
+}
+
+int main(void) {
+    game_init();
+    while (1) {
+        game_update();
+        game_draw();
         swiWaitForVBlank();
     }
+    return 0;
 }
-
-int main(void){ game_init(); game_loop(); return 0; }
