@@ -15,6 +15,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Make the toolchain available across steps
       - name: Prepare toolchain env
         shell: bash
         run: |
@@ -23,14 +24,15 @@ jobs:
           echo "DEVKITARM=/opt/devkitpro/devkitARM" >> "$GITHUB_ENV"
           echo "/opt/devkitpro/devkitARM/bin" >> "$GITHUB_PATH"
 
-      - name: Install sync-none.specs next to ds_arm9.specs
+      # ds_arm9.specs includes 'sync-none.specs' which is missing in the container.
+      # Install the shim right next to ds_arm9.specs so the include resolves.
+      - name: Install sync-none.specs beside ds_arm9.specs
         shell: bash
         run: |
           set -euo pipefail
           DS_SPECS="$(arm-none-eabi-gcc -print-file-name=ds_arm9.specs)"
           DS_DIR="$(dirname "$DS_SPECS")"
           echo "ds_arm9.specs: $DS_SPECS"
-          echo "Installing sync-none.specs into: $DS_DIR"
           install -d "$DS_DIR"
           printf '%s\n' \
             '%rename link sync_sync_link' \
