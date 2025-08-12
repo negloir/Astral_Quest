@@ -15,25 +15,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Put sync-none.specs in the exact folder that holds ds_arm9.specs
-      - name: Install sync-none.specs next to ds_arm9.specs
+      # Put sync-none.specs where the toolchain will look for specs files.
+      - name: Install sync-none.specs (no GCC needed)
         shell: bash
         run: |
           set -euo pipefail
-          DS_SPECS="$(arm-none-eabi-gcc -print-file-name=ds_arm9.specs)"
-          DS_DIR="$(dirname "$DS_SPECS")"
-          echo "ds_arm9.specs: $DS_SPECS"
-          echo "Installing sync-none.specs into: $DS_DIR"
+          # Prefer the canonical arm-none-eabi lib folder; create if missing.
+          DS_DIR="/opt/devkitpro/devkitARM/arm-none-eabi/lib"
           install -d "$DS_DIR"
           printf '%s\n' \
             '%rename link sync_sync_link' \
             '*link:' \
             '--defsym=__sync_synchronize=__sync_synchronize_none %(sync_sync_link)' \
             > "$DS_DIR/sync-none.specs"
-          ls -l "$DS_DIR/sync-none.specs"
+          echo "sync-none.specs installed at: $DS_DIR"
+          ls -l "$DS_DIR/sync-none.specs" || true
+
+          # Belt & braces: also copy into versioned GCC lib dirs if they exist.
+          if ls /opt/devkitpro/devkitARM/lib/gcc/arm-none-eabi/* >/dev/null 2>&1; then
+            for d in /opt/devkitpro/devkitARM/lib/gcc/arm-none-eabi/*; do
+              cp "$DS_DIR/sync-none.specs" "$d/sync-none.specs"
+              echo "Also installed in: $d"
+            done
+          fi
+
+      - name: Toolchain info
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM="$DEVKITPRO/devkitARM"
+          export PATH="$DEVKITARM/bin:$PATH"
+          echo "DEVKITPRO=$DEVKITPRO"
+          echo "DEVKITARM=$DEVKITARM"
+          command -v arm-none-eabi-gcc || (echo "arm-none-eabi-gcc missing from PATH" && exit 1)
+          arm-none-eabi-gcc --version
 
       - name: Build
-        run: make
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM="$DEVKITPRO/devkitARM"
+          export PATH="$DEVKITARM/bin:$PATH"
+          make
 
       - name: Upload ROM + debug
         uses: actions/upload-artifact@v4
