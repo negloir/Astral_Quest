@@ -15,6 +15,6 @@ int rand_range(int lo, int hi) {
 }
 
 void clear_screen(void) {
+    // ANSI escape to clear libnds text console
     iprintf("\x1b[2J\x1b[H");
 }
-```0
