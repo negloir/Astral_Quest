@@ -3,43 +3,37 @@ name: Build Astral Quest
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [ "main", "master" ]
   pull_request:
 
 jobs:
-  build:
+  nds:
     runs-on: ubuntu-latest
-    container:
-      image: devkitpro/devkitarm:latest
+    container: devkitpro/devkitarm:latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # --- Workaround: missing sync-none.specs in container ---
-      - name: Install sync-none.specs shim (GCC ARM)
+      # Workaround: ds_arm9.specs includes sync-none.specs which is missing in the container.
+      - name: Install sync-none.specs shim
+        shell: bash
         run: |
-          set -eu
-          SPEC_CONTENT='%rename link sync_sync_link
-          
-*link:
---defsym=__sync_synchronize=__sync_synchronize_none %(sync_sync_link)
-'
-          # Write to arm-none-eabi lib dir (commonly used by specs search)
-          install -d /opt/devkitpro/devkitARM/arm-none-eabi/lib
-          printf "%s\n" "$SPEC_CONTENT" > /opt/devkitpro/devkitARM/arm-none-eabi/lib/sync-none.specs
+          set -euo pipefail
 
-          # Also drop into versioned GCC lib dir if present (belt & braces)
+          install -d /opt/devkitpro/devkitARM/arm-none-eabi/lib
+
+          cat > /opt/devkitpro/devkitARM/arm-none-eabi/lib/sync-none.specs <<'EOF'
+          %rename link sync_sync_link
+          *link:
+          --defsym=__sync_synchronize=__sync_synchronize_none %(sync_sync_link)
+          EOF
+
           if ls /opt/devkitpro/devkitARM/lib/gcc/arm-none-eabi/* >/dev/null 2>&1; then
             for d in /opt/devkitpro/devkitARM/lib/gcc/arm-none-eabi/*; do
-              printf "%s\n" "$SPEC_CONTENT" > "$d/sync-none.specs"
+              cp /opt/devkitpro/devkitARM/arm-none-eabi/lib/sync-none.specs "$d/sync-none.specs"
             done
           fi
-      # --------------------------------------------------------
-
-      - name: (Optional) sanity: list calico stubs
-        run: |
-          ls -R include || true
 
       - name: Build
         run: make
@@ -52,3 +46,4 @@ jobs:
             astral_quest.nds
             astral_quest.elf
             astral_quest.map
+          if-no-files-found: error
