@@ -38,14 +38,14 @@ CFLAGS      := -g -Wall -O2 -ffunction-sections -fdata-sections $(ARCH) -DARM9
 CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS     := -g $(ARCH)
 
-# Use ds_arm9.specs; your workflow drops sync-none.specs beside it
+# ds_arm9.specs (your workflow installs sync-none.specs beside it)
 LDFLAGS     := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(OUTPUT).map
 
-# Link order matters (filesystem -> fat -> nds9)
+# Link order matters
 LIBS        := -lfilesystem -lfat -lnds9
 
 #---------------------------------------------------------------------------------
-# Outer stage: discover sources, set paths, then recurse to $(BUILD)
+# OUTER STAGE: discover sources, set paths, then recurse to $(BUILD)
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
@@ -53,12 +53,11 @@ export OUTPUT     := $(CURDIR)/$(TARGET)
 export VPATH      := \
 	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
 	$(foreach dir,$(DATA),$(CURDIR)/$(dir)) \
-	$(foreach dir,$(GRAPHICS),$(CURDIR)/$(dir)) \
-	$(CURDIR)/$(dir $(ICON))
+	$(foreach dir,$(GRAPHICS),$(CURDIR)/$(dir))
 
 export DEPSDIR    := $(CURDIR)/$(BUILD)
 
-# Source discovery (relative file names; VPATH resolves directories)
+# Source discovery (relative names; VPATH resolves dirs)
 CFILES            := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 CPPFILES          := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES            := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
@@ -112,13 +111,21 @@ clean:
 
 else  # ---------------------------- inside $(BUILD)
 
-# Bring in the devkitPro rules inside the build dir
+# Bring in the devkitPro rules inside the build dir (compilers, patterns, etc.)
 include $(DEVKITARM)/ds_rules
 
 # Ensure the GCC driver (arm-none-eabi-gcc) performs the link (not bare ld)
 override LD := $(CC)
 
-# Default goal builds the ROM; ds_rules wires object prerequisites
+# --- explicit dependency wiring so objects compile BEFORE linking ---
+# Without this, make may try to link even if objects haven't been built yet.
+$(OUTPUT).nds: $(OUTPUT).elf $(GAME_ICON)
+$(OUTPUT).elf: $(OFILES)
+$(OFILES_SOURCES): $(HFILES)
+$(OFILES): $(SOUNDBANK)
+# -------------------------------------------------------------------
+
+# Default goal builds the ROM
 .PHONY: all
 all: $(OUTPUT).nds
 
