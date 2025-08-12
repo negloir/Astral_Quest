@@ -19,9 +19,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "DEVKITPRO=/opt/devkitpro"        >> "$GITHUB_ENV"
+          echo "DEVKITPRO=/opt/devkitpro" >> "$GITHUB_ENV"
           echo "DEVKITARM=/opt/devkitpro/devkitARM" >> "$GITHUB_ENV"
-          echo "PATH=/opt/devkitpro/devkitARM/bin:$PATH" >> "$GITHUB_ENV"
+          echo "/opt/devkitpro/devkitARM/bin" >> "$GITHUB_PATH"
 
       - name: Install sync-none.specs next to ds_arm9.specs
         shell: bash
