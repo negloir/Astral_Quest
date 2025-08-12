@@ -15,24 +15,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ds_arm9.specs includes 'sync-none.specs'. Put the shim in the SAME DIR as ds_arm9.specs.
+      # Put sync-none.specs in the exact folder that holds ds_arm9.specs
       - name: Install sync-none.specs next to ds_arm9.specs
         shell: bash
         run: |
           set -euo pipefail
           DS_SPECS="$(arm-none-eabi-gcc -print-file-name=ds_arm9.specs)"
           DS_DIR="$(dirname "$DS_SPECS")"
-          echo "ds_arm9.specs found at: $DS_SPECS"
-          echo "Installing sync-none.specs to: $DS_DIR"
-
+          echo "ds_arm9.specs: $DS_SPECS"
+          echo "Installing sync-none.specs into: $DS_DIR"
           install -d "$DS_DIR"
-          cat > "$DS_DIR/sync-none.specs" <<'EOF'
-%rename link sync_sync_link
-*link:
---defsym=__sync_synchronize=__sync_synchronize_none %(sync_sync_link)
-EOF
-
-          echo "Installed:"
+          printf '%s\n' \
+            '%rename link sync_sync_link' \
+            '*link:' \
+            '--defsym=__sync_synchronize=__sync_synchronize_none %(sync_sync_link)' \
+            > "$DS_DIR/sync-none.specs"
           ls -l "$DS_DIR/sync-none.specs"
 
       - name: Build
