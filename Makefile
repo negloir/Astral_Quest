@@ -49,13 +49,14 @@ LIBS        := -lfilesystem -lfat -lnds9
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
-export OUTPUT     := $(CURDIR)/$(TARGET)
-export VPATH      := \
-	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-	$(foreach dir,$(DATA),$(CURDIR)/$(dir)) \
-	$(foreach dir,$(GRAPHICS),$(CURDIR)/$(dir))
-
-export DEPSDIR    := $(CURDIR)/$(BUILD)
+# Freeze absolute top dir so INCLUDE doesn't re-expand to build/...
+export TOPDIR    := $(CURDIR)
+export OUTPUT    := $(TOPDIR)/$(TARGET)
+export VPATH     := \
+	$(foreach dir,$(SOURCES),$(TOPDIR)/$(dir)) \
+	$(foreach dir,$(DATA),$(TOPDIR)/$(dir)) \
+	$(foreach dir,$(GRAPHICS),$(TOPDIR)/$(dir))
+export DEPSDIR   := $(TOPDIR)/$(BUILD)
 
 # Source discovery (relative names; VPATH resolves dirs)
 CFILES            := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
@@ -66,7 +67,7 @@ BINFILES          := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
 # Export NitroFS location for ds_rules
 ifneq ($(strip $(NITRO)),)
-export NITRO_FILES := $(CURDIR)/$(NITRO)
+export NITRO_FILES := $(TOPDIR)/$(NITRO)
 endif
 
 # Choose linker driver (C project by default)
@@ -82,15 +83,12 @@ export OFILES_SOURCES  := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
 export OFILES          := $(PNGFILES:.png=.o) $(OFILES_BIN) $(OFILES_SOURCES)
 export HFILES          := $(PNGFILES:.png=.h) $(addsuffix .h,$(subst .,_,$(BINFILES)))
 
-# Include search order:
-# 1) our local include/ FIRST (for calico stubs)
-# 2) SDK/portlibs
-# 3) build dir for generated headers
-export INCLUDE  := \
-	-I$(CURDIR)/$(INCLUDES) \
-	-iquote $(CURDIR)/$(INCLUDES) \
+# **FIXED** Include search order (freeze top path so "game.h" is found)
+export INCLUDE := \
+	-I$(TOPDIR)/$(INCLUDES) \
+	-iquote $(TOPDIR)/$(INCLUDES) \
 	$(foreach d,$(LIBDIRS),-I$(d)/include) \
-	-I$(CURDIR)/$(BUILD)
+	-I$(DEPSDIR)
 
 # Library search paths
 export LIBPATHS := $(foreach d,$(LIBDIRS),-L$(d)/lib)
@@ -103,7 +101,7 @@ all: $(BUILD)
 
 $(BUILD):
 	@mkdir -p $(BUILD)
-	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(TOPDIR)/Makefile
 
 clean:
 	@echo "[CLEAN] $(BUILD)"
@@ -117,13 +115,11 @@ include $(DEVKITARM)/ds_rules
 # Ensure the GCC driver (arm-none-eabi-gcc) performs the link (not bare ld)
 override LD := $(CC)
 
-# --- explicit dependency wiring so objects compile BEFORE linking ---
-# Without this, make may try to link even if objects haven't been built yet.
+# Explicit dependency wiring so objects compile BEFORE linking
 $(OUTPUT).nds: $(OUTPUT).elf $(GAME_ICON)
 $(OUTPUT).elf: $(OFILES)
 $(OFILES_SOURCES): $(HFILES)
 $(OFILES): $(SOUNDBANK)
-# -------------------------------------------------------------------
 
 # Default goal builds the ROM
 .PHONY: all
