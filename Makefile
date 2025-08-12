@@ -20,7 +20,7 @@ SOURCES     := source
 INCLUDES    := include
 
 # NitroFS directory (may be empty; still included in ROM)
-NITRO_FILES := nitrofiles
+NITRO       := nitrofiles
 
 #---------------------------------------------------------------------------------
 # Toolchain/lib paths
@@ -35,34 +35,49 @@ ARCH     := -marm -mthumb-interwork -march=armv5te -mtune=arm946e-s
 CFLAGS   := -g -Wall -O2 $(ARCH) -DARM9
 CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS  := -g $(ARCH)
-# Use ds_arm9.specs (our workflow installs the missing sync-none.specs)
-LDFLAGS  := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(notdir $(TARGET).map)
 
-# Link order matters for libfat/libnds
+# Use ds_arm9.specs (workflow installs missing sync-none.specs)
+# Write the .map to the repo root via $(OUTPUT).map
+LDFLAGS  := -specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(OUTPUT).map
+
+# Link order matters
 LIBS     := -lfilesystem -lfat -lnds9
 
-# Put our local include directory FIRST so <calico/...> resolves to stubs
-INCLUDE  := \
-	-I$(CURDIR)/$(INCLUDES) \
-	-iquote $(CURDIR)/$(INCLUDES) \
-	$(foreach d,$(LIBDIRS),-I$(d)/include)
-
-# Library search paths
-LIBPATHS := $(foreach d,$(LIBDIRS),-L$(d)/lib)
-
 #---------------------------------------------------------------------------------
-# Build orchestration (let ds_rules do discovery & dependency wiring)
+# Outer phase: discover sources, set paths, then recurse into $(BUILD)
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
-export OUTPUT     := $(CURDIR)/$(TARGET)
-export TOPDIR     := $(CURDIR)
-export VPATH      := $(foreach d,$(SOURCES),$(CURDIR)/$(d))
-export DEPSDIR    := $(CURDIR)/$(BUILD)
+export OUTPUT  := $(CURDIR)/$(TARGET)
+export VPATH   := $(foreach d,$(SOURCES),$(CURDIR)/$(d))
+export DEPSDIR := $(CURDIR)/$(BUILD)
 
-# Re-export variables used by ds_rules
-export SOURCES INCLUDES NITRO_FILES
-export INCLUDE LIBPATHS LIBS CFLAGS CXXFLAGS ASFLAGS LDFLAGS
+# Discover sources now; ds_rules expects these exported
+CFILES    := $(foreach d,$(SOURCES),$(notdir $(wildcard $(d)/*.c)))
+CPPFILES  := $(foreach d,$(SOURCES),$(notdir $(wildcard $(d)/*.cpp)))
+SFILES    := $(foreach d,$(SOURCES),$(notdir $(wildcard $(d)/*.s)))
+
+# Objects to build (no paths here; VPATH handles finding sources)
+export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
+export OFILES         := $(OFILES_SOURCES)
+
+# NitroFS wiring (ds_rules consumes NITRO_FILES if set)
+ifneq ($(strip $(NITRO)),)
+export NITRO_FILES := $(CURDIR)/$(NITRO)
+endif
+
+# Include paths (our local include/ FIRST for calico stubs), then SDK
+export INCLUDE := \
+	-I$(CURDIR)/$(INCLUDES) \
+	-iquote $(CURDIR)/$(INCLUDES) \
+	$(foreach d,$(LIBDIRS),-I$(d)/include) \
+	-I$(CURDIR)/$(BUILD)
+
+# Library search paths
+export LIBPATHS := $(foreach d,$(LIBDIRS),-L$(d)/lib)
+
+# Export tool flags/libs
+export CFLAGS CXXFLAGS ASFLAGS LDFLAGS LIBS
 
 .PHONY: all clean
 all: $(BUILD)
@@ -77,13 +92,13 @@ clean:
 
 else  # ---------------------------- inside $(BUILD)
 
-# Pull in devkitPro DS rules (handles object discovery & ROM creation)
+# Pull in devkitPro DS rules (compiles objects & builds ROM)
 include $(DEVKITARM)/ds_rules
 
 # Ensure the GCC driver (arm-none-eabi-gcc) performs the link, not bare ld
 override LD := $(CC)
 
-# Default goal builds the ROM; ds_rules wires object prerequisites correctly.
+# Default goal builds the ROM
 .PHONY: all
 all: $(OUTPUT).nds
 
